@@ -1,0 +1,6 @@
+# The project owner reviews every change merged into the repository.
+* @Miguesh
+
+# Security and repository automation changes require explicit owner review.
+/.github/ @Miguesh
+/SECURITY.md @Miguesh

@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a reproducible defect in the API, matching engine, or tooling.
+title: "[Bug]: "
+labels:
+  - bug
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the project. Do not include resumes, API keys,
+        personal information, or security vulnerabilities in this public report.
+        Use the private security-reporting link for vulnerabilities.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed secrets and personal information from this report.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Provide the release, tag, or commit SHA where the issue occurs.
+      placeholder: v0.1.0 or 1a2b3c4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Runtime environment
+      options:
+        - Docker Compose
+        - Local Python 3.12
+        - Local Python 3.13
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description
+      description: Explain what happened and why it appears incorrect.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest sanitized sequence that reproduces the issue.
+      placeholder: |
+        1. Start the API with ...
+        2. Send this sanitized request ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or traceback
+      description: Remove tokens, file contents, names, contact details, and other PII.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include relevant configuration names, not secret values.

@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "true"
+  UV_NO_PROGRESS: "true"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  quality:
+    name: Quality / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.15"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Check formatting
+        run: uv run ruff format --check src tests alembic
+
+      - name: Lint
+        run: uv run ruff check src tests alembic
+
+      - name: Type-check
+        run: uv run mypy src
+
+      - name: Test with coverage
+        env:
+          APP_ENV: test
+          AI_PROVIDER: local
+          DATABASE_URL: sqlite+aiosqlite:///./ci-${{ matrix.python-version }}.db
+          STORAGE_PATH: ./ci-uploads-${{ matrix.python-version }}
+        run: >-
+          uv run pytest -m "not external"
+          --cov=resume_matcher
+          --cov-report=term-missing
+          --cov-report=xml:coverage-${{ matrix.python-version }}.xml
+
+  migrations:
+    name: Database migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      APP_ENV: test
+      AI_PROVIDER: local
+      DATABASE_URL: sqlite+aiosqlite:///./migration-check.db
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.15"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Require a single migration head
+        shell: bash
+        run: |
+          head_count="$(uv run alembic heads | sed '/^[[:space:]]*$/d' | wc -l)"
+          test "$head_count" -eq 1
+
+      - name: Exercise migration lifecycle
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+  dependency-audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.9.15"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --all-groups --frozen
+
+      - name: Export production dependency graph
+        run: >-
+          uv export --quiet --frozen --no-dev --no-emit-project
+          --output-file requirements-audit.txt
+
+      - name: Audit known vulnerabilities
+        run: >-
+          uv run pip-audit
+          --requirement requirements-audit.txt
+          --progress-spinner off
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build runtime image
+        run: >-
+          docker build
+          --target runtime
+          --tag ai-resume-job-match-agent:ci
+          .
