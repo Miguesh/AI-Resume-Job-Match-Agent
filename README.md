@@ -59,7 +59,8 @@ Prerequisites:
 git clone https://github.com/Miguesh/AI-Resume-Job-Match-Agent.git
 cd AI-Resume-Job-Match-Agent
 cp .env.example .env
-uv sync --all-groups
+uv sync --all-groups --frozen
+mkdir -p data
 uv run alembic upgrade head
 uv run uvicorn resume_matcher.main:app --reload
 ```
@@ -249,7 +250,7 @@ Without Make, run the corresponding `uv run ruff`, `uv run mypy`, and `uv run py
 │   ├── infrastructure/     # AI, parsing, persistence, storage, export, logging
 │   ├── presentation/api/   # FastAPI routers, schemas, dependencies, middleware, errors
 │   ├── config/             # Typed environment settings
-│   ├── container.py        # Dependency-injection composition root
+│   ├── container.py        # Dependency-injection graph for services and adapters
 │   └── main.py             # ASGI entrypoint
 ├── tests/                  # Unit, integration, contract, E2E, and opt-in external tests
 ├── alembic/                # Database migrations
@@ -273,7 +274,7 @@ Important MVP limitations:
 - OpenAI mode sends sensitive resume and job data to an external provider. Local mode avoids that transfer.
 - Rate limiting is an in-memory, per-process safety net. Docker runs multiple workers, so production needs shared edge rate limiting and request/body limits.
 - PDF parsing does not perform OCR, rejects password-protected documents, and relies on third-party parsers that must be patched promptly.
-- The fact guard preserves name/contact fields; rejects added skills, certifications, roles, or education; preserves role dates/location and education metadata; and requires every recorded change to cite non-empty source-present evidence. A changed headline or summary must have a corresponding change record, as must any non-reordering change to experience bullets or experience skills. It still cannot prove that an evidence-grounded rewrite preserves the source meaning or that a new metric or implication is true. Human review is mandatory.
+- The fact guard preserves name/contact fields; rejects added skills, certifications, roles, or education; preserves role dates/location and education metadata; and requires every recorded change to cite non-empty source-present evidence. A changed headline or summary must have a section-matching change record, as must any non-reordering change to experience bullets or experience skills. The current check is section-level and does not bind each record's before/after text to an exact diff. It also cannot prove that an evidence-grounded rewrite preserves the source meaning or that a new metric or implication is true. Human review is mandatory.
 - There is no malware scanner, background job isolation, automated retention worker, audit event store, or multi-tenant authorization layer in this release.
 - A match score is decision support, not a hiring recommendation, legal determination, or guarantee of ATS behavior.
 

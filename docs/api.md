@@ -368,7 +368,7 @@ The `200 OK` response is the same `MatchResponse` schema. `optimized_resume` cha
 }
 ```
 
-The snippet above is the complete nested `optimized_resume` value, not the complete enclosing `MatchResponse`. OpenAI mode may rewrite more content than local mode. In both modes, a fact guard runs before persistence. It preserves name/contact fields, role dates/location, and education metadata; rejects added skills, certifications, roles, and education; and requires non-empty source-present evidence for every recorded change. Changed headline/summary text and non-reordering experience bullet/skill content also require a corresponding evidence record. A `422` means it detected unsupported content; passing the guard is not a semantic guarantee that every evidence-grounded rewrite is true.
+The snippet above is the complete nested `optimized_resume` value, not the complete enclosing `MatchResponse`. OpenAI mode may rewrite more content than local mode. In both modes, a fact guard runs before persistence. It preserves name/contact fields, role dates/location, and education metadata; rejects added skills, certifications, roles, and education; and requires non-empty source-present evidence for every recorded change. Changed headline/summary text and non-reordering experience bullet/skill content also require at least one section-matching evidence record. The current guard does not bind each record's before/after text to an exact diff. A `422` means it detected unsupported content; passing the guard is not a semantic guarantee that every evidence-grounded rewrite is true.
 
 ### 6. Export results
 
@@ -417,7 +417,7 @@ The service deletes the database resume row and the UUID-addressed original file
 
 ### `POST /resumes`
 
-- Body: multipart form with exactly one required `file` field.
+- Body: multipart form with one required `file` field. Additional multipart fields are ignored by the current route rather than explicitly rejected.
 - Extensions: `.pdf` and `.docx` only.
 - PDF: validates magic bytes, rejects password protection, supports at most 100 pages, requires selectable text, and does not perform OCR.
 - DOCX: validates ZIP/Word parts, rejects macro parts, limits total uncompressed size to 50 MiB, and rejects suspicious large-entry compression ratios.
@@ -504,7 +504,7 @@ The request-size middleware emits the same core Problem Details fields for an in
 | 400 | Invalid `Content-Length`; empty, corrupted, password-protected, non-text, or structurally invalid document |
 | 401 | Missing or invalid configured API key |
 | 404 | Resume, job, or match UUID not found |
-| 413 | Request, upload, archive expansion, or job text exceeds a safety limit |
+| 413 | Declared/received request body, uploaded file, or job text exceeds its byte/character limit |
 | 415 | Unsupported resume extension |
 | 422 | Request schema validation or factual-integrity failure |
 | 429 | In-process request rate limit reached |

@@ -41,6 +41,7 @@ an external key. Only set `OPENAI_API_KEY` when deliberately testing the OpenAI 
 Initialize the database and run the API:
 
 ```shell
+mkdir -p data
 uv run alembic upgrade head
 uv run uvicorn resume_matcher.main:app --reload
 ```
