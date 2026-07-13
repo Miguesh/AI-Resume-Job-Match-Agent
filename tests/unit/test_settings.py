@@ -8,6 +8,14 @@ from pydantic import ValidationError
 from resume_matcher.config.settings import AIProvider, AppEnvironment, Settings
 
 
+@pytest.fixture(autouse=True)
+def isolate_settings_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep settings tests deterministic under CI and developer shell configuration."""
+    for field_name in Settings.model_fields:
+        monkeypatch.delenv(field_name.upper(), raising=False)
+        monkeypatch.delenv(field_name.lower(), raising=False)
+
+
 def test_development_defaults_are_safe_and_documentation_is_enabled() -> None:
     settings = Settings(_env_file=None)
 
