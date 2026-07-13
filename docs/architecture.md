@@ -83,7 +83,7 @@ Health endpoints are public. Resume, job, and match routers use a bearer API-key
 
 ### Composition root
 
-`AppContainer.build()` is the single composition root. It chooses the AI adapter from `AI_PROVIDER` and constructs long-lived infrastructure objects. Each request receives an async database session and fresh application services wired to repositories using that session.
+`create_app()` and `AppContainer.build()` form the explicit composition root. The app factory assembles FastAPI, middleware, routers, and lifecycle behavior; the container chooses the AI adapter from `AI_PROVIDER` and constructs long-lived infrastructure objects. Each request receives an async database session and fresh application services wired to repositories using that session.
 
 This explicit composition keeps dependency injection understandable without requiring a DI framework.
 
@@ -112,7 +112,7 @@ This explicit composition keeps dependency injection understandable without requ
 
 1. `POST /api/v1/matches/{id}/optimize` loads the match, resume, and job.
 2. The intelligence adapter creates an optimized structured draft.
-3. `ResumeFactGuard` preserves identity/contact data and verified role/education metadata; rejects added skills, certifications, roles, or education; and requires every recorded change to cite non-empty evidence present in the source text. Headline/summary rewrites and non-reordering experience bullet/skill changes must also have corresponding evidence records.
+3. `ResumeFactGuard` preserves identity/contact data and verified role/education metadata; rejects added skills, certifications, roles, or education; and requires every recorded change to cite non-empty evidence present in the source text. Headline/summary rewrites and non-reordering experience bullet/skill changes must also have at least one section-matching evidence record. This is a section-level presence check, not an exact binding between each record and diff.
 4. A passing draft is persisted with the analysis.
 5. Export selects the optimized draft when present and otherwise uses the original profile.
 6. JSON includes the selected resume, target job, and match evidence. The job profile includes raw job text; the original `ResumeProfile` includes raw resume text when no optimized draft has replaced it. DOCX and PDF render the selected resume without a separate analysis section.
@@ -153,7 +153,7 @@ AI is behind the `ResumeIntelligence` port. The OpenAI adapter:
 - uses the Responses API structured parsing feature with strict Pydantic contracts;
 - maps timeouts, connection failures, rate limits, and provider errors to application exceptions;
 - never returns an overall or dimension score;
-- subjects optimized output to a deterministic fact guard that preserves identity/contact fields, role dates/location, and education metadata; prevents added skills/certifications; validates source-present change evidence; and rejects headline/summary rewrites or non-reordering experience bullet/skill changes that lack a change record.
+- subjects optimized output to a deterministic fact guard that preserves identity/contact fields, role dates/location, and education metadata; prevents added skills/certifications; validates source-present change evidence; and rejects headline/summary rewrites or non-reordering experience bullet/skill changes that lack a section-matching change record. The current guard does not bind each record's before/after text to an exact diff.
 
 The direct SDK decision is documented in [ADR 0003](adr/0003-direct-openai-sdk.md). Prompt and optimization versions live in `infrastructure/ai/prompts.py` and should be evaluated whenever changed.
 

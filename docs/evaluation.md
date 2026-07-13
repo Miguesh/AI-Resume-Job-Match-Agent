@@ -162,8 +162,9 @@ Optimization must be assessed for both relevance and factual integrity.
 - Identity and contact fields remain unchanged.
 - Certifications remain a subset of the source certifications.
 - Every recorded `OptimizationChange` includes non-empty source evidence found in raw source text.
-- A changed headline or summary has a corresponding change record.
-- A changed multiset of experience bullets or experience skills has an experience change record; pure reordering remains allowed.
+- A changed headline or summary has at least one section-matching change record.
+- A changed multiset of experience bullets or experience skills has at least one experience-section change record; pure reordering remains allowed.
+- A future stronger check should bind every change record's before/after text and evidence to its exact diff or role.
 - Every output conforms to `OptimizedResumeContract` limits.
 - DOCX and PDF outputs can be reopened and their text remains searchable.
 - Missing required skills do not appear as newly claimed resume skills.
