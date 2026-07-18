@@ -32,7 +32,7 @@ dependencies = [
   "python-docx>=1.2,<2",
   "python-multipart>=0.0.20,<1",
   "reportlab>=4.4,<5",
-  "sqlalchemy[asyncio]>=2.0.41,<3",
+  "sqlalchemy[asyncio]>=2.0.51,<3",
   "uvicorn[standard]>=0.35,<1",
 ]
 
