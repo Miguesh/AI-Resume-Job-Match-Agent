@@ -2,28 +2,25 @@
 
 ## Policy summary
 
-Score version `1.0.0` computes a `0.0`–`100.0` match score from validated `ResumeProfile` and `JobProfile` evidence. No LLM assigns, adjusts, or interprets the numeric result.
+Score version `2.0.0` computes a `0.0`–`100.0` match score from validated `ResumeProfile` and `JobProfile` evidence. No LLM assigns, adjusts, or interprets the numeric result.
 
 ```text
-overall = round(
-    skills * 0.45
-  + experience * 0.25
-  + keywords * 0.15
-  + education * 0.10
-  + responsibilities * 0.05,
-  1
-)
+active_weight = sum(base_weight[d] for each applicable dimension d)
+effective_weight[d] = base_weight[d] / active_weight
+overall = round(sum(raw_score[d] * effective_weight[d]), 1)
 ```
 
-Each dimension is a percentage from `0` to `100`. Raw dimension scores and weighted contributions are rounded independently to two decimal places in the response; the final sum of those weighted contributions is rounded to one decimal place. Because the weighted value is calculated from the internal score before its display rounding, multiplying a displayed raw score by its weight can differ from the displayed contribution by `0.01` at a rounding boundary.
+The table below defines base weights. A dimension is applicable only when the extracted job contains its corresponding criterion. Omitted dimensions receive raw score `0`, effective weight `0`, and no contribution. The remaining base weights are renormalized to sum to `1.0`, preventing unspecified criteria from inflating the result. If every dimension is omitted, the overall score is `0` with an insufficient-criteria explanation.
 
-| Dimension | Weight | Primary evidence |
-|---|---:|---|
-| Skills | 0.45 | Normalized required/preferred job skills and resume skills |
-| Experience | 0.25 | Extracted total years and stated job minimum |
-| Keywords | 0.15 | Normalized resume keywords/skills and job keywords |
-| Education | 0.10 | Ordered extracted education levels |
-| Responsibilities | 0.05 | Token overlap between resume achievements and job responsibilities |
+Each applicable dimension is a percentage from `0` to `100`. Raw dimension scores and weighted contributions are rounded independently to two decimal places in the response; the final sum of those weighted contributions is rounded to one decimal place. Because the weighted value is calculated from the internal score before its display rounding, multiplying a displayed raw score by its effective weight can differ from the displayed contribution by `0.01` at a rounding boundary.
+
+| Dimension | Base weight | Applicability | Primary evidence |
+|---|---:|---|---|
+| Skills | 0.45 | At least one required or preferred skill | Normalized required/preferred job skills and resume skills |
+| Experience | 0.25 | Minimum years greater than zero | Extracted total years and stated job minimum |
+| Keywords | 0.15 | At least one job keyword | Normalized resume keywords/skills and job keywords |
+| Education | 0.10 | Level other than `none` | Ordered extracted education levels |
+| Responsibilities | 0.05 | At least one responsibility | Token overlap between resume achievements and job responsibilities |
 
 The source of truth is `src/resume_matcher/domain/matching.py`.
 
@@ -52,13 +49,13 @@ Let:
 - `S` be the set of normalized resume skills;
 - `coverage(A) = |A intersect S| / |A| * 100`.
 
-An empty target set has `100%` coverage because there is no criterion to miss.
+An empty required or preferred subset is neutral inside the skills formula. If both subsets are empty, the entire dimension is inapplicable and excluded from the overall score.
 
 ```text
 if R and P: skills = 0.80 * coverage(R) + 0.20 * coverage(P)
 if R only:  skills = coverage(R)
 if P only:  skills = coverage(P)
-if neither: skills = 100
+if neither: skills is not applicable
 ```
 
 The response separately reports matched skills, missing required skills, and missing preferred skills. Required criteria receive four times the influence of preferred criteria inside the dimension when both categories are present.
@@ -66,10 +63,10 @@ The response separately reports matched skills, missing required skills, and mis
 ### Experience — 25%
 
 ```text
-if required_years <= 0:
-    experience = 100
-else:
+if required_years > 0:
     experience = min(max(resume_years, 0) / required_years, 1) * 100
+else:
+    experience is not applicable
 ```
 
 Experience saturates at `100`; extra years do not create bonus points. Extraction contracts constrain both values to `0`–`80` years. The policy does not independently validate whether date ranges support the extracted total.
@@ -82,7 +79,7 @@ Resume evidence is the union of extracted resume keywords and displayed resume s
 keywords = matched_normalized_job_keywords / normalized_job_keywords * 100
 ```
 
-An empty job-keyword set scores `100`. Keyword matching does not use term frequency, stemming, embeddings, hidden text, or an LLM. Recommendations explicitly discourage keyword stuffing.
+An empty job-keyword set makes the dimension inapplicable. Keyword matching does not use term frequency, stemming, embeddings, hidden text, or an LLM. Recommendations explicitly discourage keyword stuffing.
 
 ### Education — 10%
 
@@ -97,7 +94,7 @@ Education uses this ordered rank:
 | `master` | 4 |
 | `doctorate` | 5 |
 
-If the job has no explicit requirement, the dimension scores `100`. Otherwise the highest resume level is compared with the required rank:
+If the job has no explicit requirement, the dimension is inapplicable. Otherwise the highest resume level is compared with the required rank:
 
 ```text
 if attained_rank >= required_rank:
@@ -121,7 +118,7 @@ Tokens are case-folded, must start with a letter, are at least three characters 
 responsibilities = |resume_terms intersect job_terms| / |job_terms| * 100
 ```
 
-An empty responsibility set scores `100`. The API reports at most the first 12 matched terms for this dimension. This deliberately low-weight lexical signal does not claim semantic equivalence.
+An empty responsibility set makes the dimension inapplicable. The API reports at most the first 12 matched terms for this dimension. This deliberately low-base-weight lexical signal does not claim semantic equivalence.
 
 ## Worked example
 
@@ -133,6 +130,8 @@ Assume the extracted evidence yields:
 - three of four job keywords matched;
 - a bachelor's requirement met by a bachelor's degree;
 - `40%` responsibility-token coverage.
+
+All five dimensions are applicable in this example, so effective and base weights are identical.
 
 | Dimension | Raw score | Weight | Contribution |
 |---|---:|---:|---:|
@@ -152,19 +151,27 @@ Every `ScoreDimension` includes:
 - matched and missing evidence where the policy exposes it;
 - a calculation-specific explanation.
 
-The top-level explanation names the strongest and weakest dimensions. Deterministic recommendation rules prioritize:
+With multiple enabled dimensions, the top-level explanation names the strongest raw
+dimension and the largest weighted improvement opportunity. The latter is the remaining
+raw-score gap multiplied by the effective weight, so it reflects the dimension's maximum
+possible effect on the overall score. A single enabled dimension receives a dedicated
+explanation instead of being described as both strongest and weakest. Deterministic
+recommendation rules prioritize:
 
 1. missing required skills and insufficient documented experience as high priority;
 2. education gaps and missing preferred skills as medium priority;
 3. missing terminology as low priority.
 
+When no explicit criteria can be extracted, the recommendation category is `input_quality`
+and asks for a complete job description instead of claiming the available criteria align.
+
 Guidance consistently distinguishes missing resume evidence from an actual missing qualification. It instructs users to add a skill only when supported by real experience.
 
-## Empty evidence behavior
+## Omitted-criteria behavior
 
-When the extractor finds no job criteria for a dimension, that dimension scores `100` rather than penalizing the candidate for absent requirements. Consequently, a vague or poorly extracted job description can produce a high score with little evidence.
+When the extractor finds no job criterion for a dimension, policy `2.0.0` reports raw score and weight `0` for that dimension and renormalizes the remaining base weights. For example, if a job contains only skills, skills receive effective weight `1.0`. If no explicit criteria are extracted at all, the result is `0` and explicitly says a meaningful match cannot be calculated. If criteria exist but custom scoring configuration assigns zero weight to every applicable dimension, the result remains `0` but reports the configuration problem separately from missing job input.
 
-Consumers should inspect the dimension evidence, not use the overall percentage alone. A future confidence or completeness indicator should be separate from the compatibility score so it does not silently change score semantics.
+This prevents a sparse job description from receiving free points. It does not measure extraction confidence: consumers should still inspect the dimension evidence and distinguish an inapplicable dimension from a verified mismatch. A future confidence or completeness indicator should remain separate from compatibility.
 
 ## Versioning policy
 

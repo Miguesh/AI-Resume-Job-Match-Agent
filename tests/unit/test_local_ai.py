@@ -153,7 +153,7 @@ async def test_local_optimization_only_reorders_verified_evidence(
     assert {change.section for change in optimized.changes} == {
         "summary",
         "skills",
-        "experience:Acme",
+        "experience:0",
     }
     ResumeFactGuard().validate(resume, optimized)
 
@@ -186,3 +186,5 @@ def test_versioned_prompts_define_untrusted_data_and_factual_boundaries() -> Non
     assert "untrusted_job_description" in JOB_EXTRACTION_INSTRUCTIONS
     assert "never add employers" in OPTIMIZATION_INSTRUCTIONS.casefold()
     assert "source_evidence" in OPTIMIZATION_INSTRUCTIONS
+    assert "experience:<zero-based-source-index>" in OPTIMIZATION_INSTRUCTIONS
+    assert "Preserve every source role" in OPTIMIZATION_INSTRUCTIONS

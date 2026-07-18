@@ -45,13 +45,19 @@ jobs:
         run: uv sync --all-groups --frozen
 
       - name: Check formatting
-        run: uv run ruff format --check src tests alembic
+        run: uv run ruff format --check src tests evaluations scripts alembic
 
       - name: Lint
-        run: uv run ruff check src tests alembic
+        run: uv run ruff check src tests evaluations scripts alembic
 
       - name: Type-check
-        run: uv run mypy src
+        run: uv run mypy src evaluations scripts
+
+      - name: Run synthetic evaluation gate
+        run: >-
+          uv run python -m evaluations.runner
+          --json-output tmp/evaluation-report.json
+          --markdown-output tmp/evaluation-report.md
 
       - name: Test with coverage
         env:
@@ -141,6 +147,12 @@ jobs:
     name: Docker image
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      APP_ENV: production
+      APP_API_KEYS: ci-smoke-api-key
+      APP_ALLOWED_HOSTS: localhost,127.0.0.1
+      AI_PROVIDER: local
+      POSTGRES_PASSWORD: ci-smoke-database-password
 
     steps:
       - name: Check out source
@@ -148,9 +160,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build runtime image
-        run: >-
-          docker build
-          --target runtime
-          --tag ai-resume-job-match-agent:ci
-          .
+      - name: Start PostgreSQL and API
+        run: docker compose up --build --detach
+
+      - name: Exercise complete containerized product path
+        run: python scripts/docker_smoke.py exercise --state-file /tmp/docker-smoke-state.json
+
+      - name: Restart API container
+        run: docker compose restart api
+
+      - name: Verify PostgreSQL persistence after restart
+        run: python scripts/docker_smoke.py verify --state-file /tmp/docker-smoke-state.json
+
+      - name: Show stack logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop application stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans

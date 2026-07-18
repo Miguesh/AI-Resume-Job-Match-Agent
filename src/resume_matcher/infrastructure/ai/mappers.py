@@ -8,7 +8,10 @@ from resume_matcher.domain.entities import (
     OptimizedResume,
     ResumeProfile,
 )
-from resume_matcher.domain.skill_normalizer import deduplicate_skills
+from resume_matcher.domain.skill_normalizer import (
+    deduplicate_skills,
+    map_skills_preserving_order,
+)
 from resume_matcher.infrastructure.ai.contracts import (
     EducationContract,
     ExperienceContract,
@@ -18,7 +21,8 @@ from resume_matcher.infrastructure.ai.contracts import (
 )
 
 
-def _experience(value: ExperienceContract) -> Experience:
+def _experience(value: ExperienceContract, *, preserve_skill_order: bool = False) -> Experience:
+    skill_mapper = map_skills_preserving_order if preserve_skill_order else deduplicate_skills
     return Experience(
         title=value.title,
         company=value.company,
@@ -26,7 +30,7 @@ def _experience(value: ExperienceContract) -> Experience:
         end_date=value.end_date,
         location=value.location,
         bullets=tuple(value.bullets),
-        skills=tuple(skill.name for skill in deduplicate_skills(value.skills)),
+        skills=tuple(skill.name for skill in skill_mapper(value.skills)),
     )
 
 
@@ -92,10 +96,12 @@ def optimized_from_contract(value: OptimizedResumeContract) -> OptimizedResume:
         email=value.email,
         phone=value.phone,
         location=value.location,
-        skills=deduplicate_skills(value.skills),
-        experiences=tuple(_experience(item) for item in value.experiences),
+        skills=map_skills_preserving_order(value.skills),
+        experiences=tuple(
+            _experience(item, preserve_skill_order=True) for item in value.experiences
+        ),
         education=tuple(_education(item) for item in value.education),
-        certifications=_unique(value.certifications),
+        certifications=tuple(value.certifications),
         changes=tuple(
             OptimizationChange(
                 section=item.section,

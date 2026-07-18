@@ -115,7 +115,7 @@ class MatchResult:
     missing_keywords: tuple[str, ...]
     recommendations: tuple[Recommendation, ...]
     explanation: str
-    score_version: str = "1.0.0"
+    score_version: str = "2.0.0"
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,6 +13,7 @@ services:
       AI_PROVIDER: ${AI_PROVIDER:-local}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS:-16000}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-resume_matcher}:${POSTGRES_PASSWORD:-change-me-before-production}@postgres:5432/${POSTGRES_DB:-resume_matcher}
       DATABASE_AUTO_CREATE_SCHEMA: "false"
       STORAGE_PATH: /app/data/uploads
@@ -28,11 +29,11 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=2)"]
       interval: 10s
       timeout: 3s
       retries: 5
-      start_period: 15s
+      start_period: 20s
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from resume_matcher.domain.entities import (
+    EducationLevel,
     JobProfile,
     Recommendation,
     RecommendationPriority,
@@ -22,6 +23,28 @@ class RecommendationService:
         experience_score: float,
         education_score: float,
     ) -> tuple[Recommendation, ...]:
+        has_explicit_criteria = bool(
+            job.required_skills
+            or job.preferred_skills
+            or job.minimum_years_experience > 0
+            or job.keywords
+            or job.education_level is not EducationLevel.NONE
+            or job.responsibilities
+        )
+        if not has_explicit_criteria:
+            return (
+                Recommendation(
+                    category="input_quality",
+                    priority=RecommendationPriority.HIGH,
+                    title="Provide a more complete job description",
+                    guidance=(
+                        "No explicit skills, experience, keywords, education, or responsibilities "
+                        "were extracted. Add the complete role requirements before interpreting "
+                        "the match score."
+                    ),
+                ),
+            )
+
         items: list[Recommendation] = []
         if missing_required:
             items.append(

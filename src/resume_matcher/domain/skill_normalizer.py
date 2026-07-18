@@ -83,9 +83,24 @@ def create_skill(value: str) -> Skill:
 
 
 def deduplicate_skills(values: list[str] | tuple[str, ...]) -> tuple[Skill, ...]:
+    return tuple(
+        sorted(deduplicate_skills_preserving_order(values), key=lambda item: item.normalized_name)
+    )
+
+
+def deduplicate_skills_preserving_order(
+    values: list[str] | tuple[str, ...],
+) -> tuple[Skill, ...]:
     skills: dict[str, Skill] = {}
     for value in values:
         skill = create_skill(value)
         if skill.normalized_name:
             skills.setdefault(skill.normalized_name, skill)
-    return tuple(sorted(skills.values(), key=lambda item: item.normalized_name))
+    return tuple(skills.values())
+
+
+def map_skills_preserving_order(
+    values: list[str] | tuple[str, ...],
+) -> tuple[Skill, ...]:
+    """Normalize each provider item without hiding duplicate output."""
+    return tuple(skill for value in values if (skill := create_skill(value)).normalized_name)

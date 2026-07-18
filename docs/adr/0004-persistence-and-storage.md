@@ -20,6 +20,7 @@ Local contributors need a zero-service option. The Docker deployment needs a pro
 - Force the local upload directory to `0700`, stored files to `0600`, and remove temporary files after failed atomic writes.
 - Hash source bytes with SHA-256 for exact duplicate detection.
 - Request cascade deletion from resume/job rows to match rows through foreign keys.
+- Use compensating operations around filesystem/database writes: remove a newly uploaded file after a failed database commit, and restore a deleted file if its metadata deletion cannot commit.
 
 The initial filesystem adapter does not implement application-layer encryption. Deployments must provide encrypted volumes, encrypted backups, least-privilege access, and lifecycle management. `APP_DATA_RETENTION_DAYS` expresses intended policy but is not automatically enforced in this release.
 
@@ -35,7 +36,7 @@ The initial filesystem adapter does not implement application-layer encryption. 
 
 ### Negative
 
-- Database and filesystem changes are not atomic; compensation and reconciliation are required.
+- Database and filesystem changes are not atomic; compensation reduces common failure windows, but failed compensation still requires operational reconciliation.
 - JSON profiles have weaker field-level query constraints than normalized tables.
 - SQLite and PostgreSQL differ in foreign-key and concurrency behavior, so PostgreSQL integration coverage remains important.
 - Local filesystem storage complicates horizontal scaling unless the volume is shared.

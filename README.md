@@ -111,15 +111,16 @@ Settings are read from environment variables and an optional `.env` file. Comma-
 | `OPENAI_MODEL` | `gpt-5.6-luna` | Model passed to the OpenAI Responses API; choose a model available to your account that supports structured outputs. |
 | `OPENAI_TIMEOUT_SECONDS` | `45` | OpenAI request timeout. |
 | `OPENAI_MAX_RETRIES` | `3` | OpenAI SDK retry count. |
+| `OPENAI_MAX_OUTPUT_TOKENS` | `16000` | Maximum output-token budget for each structured OpenAI response. |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/resume_matcher.db` | SQLAlchemy async database URL. Compose supplies PostgreSQL. |
 | `DATABASE_ECHO` | `false` | SQL statement logging; keep disabled with sensitive data. |
-| `DATABASE_AUTO_CREATE_SCHEMA` | `true` | Creates missing tables on startup; use Alembic migrations for managed deployments. |
+| `DATABASE_AUTO_CREATE_SCHEMA` | `true` | Development convenience that creates missing tables on startup. Production requires `false` and Alembic migrations applied before startup. |
 | `STORAGE_PATH` | `./data/uploads` | Private directory for original resume bytes. |
 | `LOG_LEVEL` | `INFO` | Python log level. |
 | `LOG_JSON` | `true` | Emit structured JSON logs when true. |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | development values | Docker Compose PostgreSQL settings; change the password before deployment. |
 
-Production startup rejects debug mode, an empty API-key list, wildcard allowed hosts, and an OpenAI provider without an API key.
+Production startup rejects debug mode, an empty API-key list, wildcard allowed hosts, schema auto-creation, and an OpenAI provider without an API key.
 
 ## OpenAI setup
 
@@ -137,11 +138,11 @@ OPENAI_MODEL=your-supported-model
 
 4. Restart the API and check `/api/v1/health/ready`; its `ai_provider` check reports the selected adapter, not a live OpenAI connectivity test.
 
-The adapter uses the SDK's Pydantic parsing support described in OpenAI's [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs). When OpenAI mode is enabled, extracted resume text, job text, contact information, and optimization context are sent to OpenAI. Confirm your consent, retention, regional, and data-processing requirements before enabling it. OpenAI is used for structured extraction and rewriting only; it never assigns the numeric score.
+The adapter uses the SDK's Pydantic parsing support described in OpenAI's [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs) and explicitly sends `store=false` on every Responses API request. When OpenAI mode is enabled, extracted resume text, job text, contact information, and optimization context are sent to OpenAI. Confirm your consent, retention, regional, and data-processing requirements before enabling it. OpenAI is used for structured extraction and rewriting only; it never assigns the numeric score.
 
 ## Scoring at a glance
 
-Score policy `1.0.0` uses these fixed weights:
+Score policy `2.0.0` uses these base weights:
 
 | Dimension | Weight | Calculation summary |
 |---|---:|---|
@@ -151,7 +152,7 @@ Score policy `1.0.0` uses these fixed weights:
 | Education | 10% | Ordered attainment relative to the extracted minimum. |
 | Responsibilities | 5% | Token overlap between resume achievements and job responsibilities. |
 
-The overall score is the sum of each raw dimension score multiplied by its weight, rounded to one decimal place. Missing criteria do not automatically prove a candidate lacks a qualification; they mean the submitted resume did not provide matching extracted evidence. See [docs/scoring.md](docs/scoring.md) for exact empty-set, normalization, and rounding behavior.
+The overall score is the sum of each applicable raw dimension score multiplied by its effective weight, rounded to one decimal place. When a job omits a criterion, that dimension receives weight `0` and the remaining base weights are renormalized; a job with no explicit criteria returns `0` with an insufficient-criteria explanation instead of an inflated match. Missing criteria do not prove a candidate lacks a qualification; they mean the submitted resume did not provide matching extracted evidence. See [docs/scoring.md](docs/scoring.md) for exact applicability, normalization, and rounding behavior.
 
 ## API
 
@@ -235,10 +236,15 @@ make lint          # Ruff formatting and lint checks
 make typecheck     # strict mypy
 make test          # tests excluding external credentials
 make coverage      # branch coverage with an 85% project gate
-make ci            # consolidated lint, type, and coverage checks
+make evaluate      # versioned synthetic extraction/scoring/fact-guard benchmark
+make ci            # consolidated lint, type, evaluation, and coverage checks
 ```
 
 Without Make, run the corresponding `uv run ruff`, `uv run mypy`, and `uv run pytest` commands from the [Makefile](Makefile). Integration tests use local dependencies unless marked `external`; OpenAI credentials are not required for the default suite. See [Evaluation](docs/evaluation.md) for quality criteria beyond line coverage.
+
+The offline benchmark uses only synthetic data and writes reproducible JSON and Markdown
+reports under `tmp/`. Its accepted [local baseline](evaluations/baselines/local-v1.md) is a
+regression artifact, not a claim about real applicants or hiring outcomes.
 
 ## Project structure
 
@@ -253,6 +259,8 @@ Without Make, run the corresponding `uv run ruff`, `uv run mypy`, and `uv run py
 │   ├── container.py        # Dependency-injection graph for services and adapters
 │   └── main.py             # ASGI entrypoint
 ├── tests/                  # Unit, integration, contract, E2E, and opt-in external tests
+├── evaluations/            # Synthetic fixtures, offline runner, and accepted local baseline
+├── scripts/                # Dependency-free container smoke test
 ├── alembic/                # Database migrations
 ├── docs/                   # Architecture, API, scoring, evaluation, ADRs
 ├── Dockerfile
@@ -274,7 +282,7 @@ Important MVP limitations:
 - OpenAI mode sends sensitive resume and job data to an external provider. Local mode avoids that transfer.
 - Rate limiting is an in-memory, per-process safety net. Docker runs multiple workers, so production needs shared edge rate limiting and request/body limits.
 - PDF parsing does not perform OCR, rejects password-protected documents, and relies on third-party parsers that must be patched promptly.
-- The fact guard preserves name/contact fields; rejects added skills, certifications, roles, or education; preserves role dates/location and education metadata; and requires every recorded change to cite non-empty source-present evidence. A changed headline or summary must have a section-matching change record, as must any non-reordering change to experience bullets or experience skills. The current check is section-level and does not bind each record's before/after text to an exact diff. It also cannot prove that an evidence-grounded rewrite preserves the source meaning or that a new metric or implication is true. Human review is mandatory.
+- The fact guard preserves name/contact fields and exact skill, certification, role, education, and per-role-skill inventories; blocks omissions and duplicates; preserves role/education metadata; and rejects new quantitative claims absent from the relevant source context. Headline, summary, skill-order, and experience-bullet changes must identify the exact supported section, match the returned before/after content, and cite section-relevant source evidence. This structural binding still cannot prove semantic entailment or that a new implication is true. Human review is mandatory.
 - There is no malware scanner, background job isolation, automated retention worker, audit event store, or multi-tenant authorization layer in this release.
 - A match score is decision support, not a hiring recommendation, legal determination, or guarantee of ATS behavior.
 

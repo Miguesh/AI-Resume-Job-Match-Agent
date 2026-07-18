@@ -76,7 +76,7 @@ _STOP_WORDS = {
 class MatchingService:
     """Compute a score exclusively from validated structured evidence."""
 
-    score_version = "1.0.0"
+    score_version = "2.0.0"
 
     def __init__(
         self,
@@ -87,6 +87,28 @@ class MatchingService:
         self._recommendations = recommendations or RecommendationService()
 
     def score(self, resume: ResumeProfile, job: JobProfile) -> MatchResult:
+        applicable = {
+            "skills": bool(job.required_skills or job.preferred_skills),
+            "experience": job.minimum_years_experience > 0,
+            "keywords": bool(job.keywords),
+            "education": job.education_level is not EducationLevel.NONE,
+            "responsibilities": bool(job.responsibilities),
+        }
+        base_weights = {
+            "skills": self._weights.skills,
+            "experience": self._weights.experience,
+            "keywords": self._weights.keywords,
+            "education": self._weights.education,
+            "responsibilities": self._weights.responsibilities,
+        }
+        active_weight = sum(
+            base_weights[name] for name, is_applicable in applicable.items() if is_applicable
+        )
+        effective_weights = {
+            name: (weight / active_weight if applicable[name] and active_weight else 0.0)
+            for name, weight in base_weights.items()
+        }
+
         resume_skills = {skill.normalized_name for skill in resume.skills}
         required = {skill.normalized_name: skill.name for skill in job.required_skills}
         preferred = {skill.normalized_name: skill.name for skill in job.preferred_skills}
@@ -138,50 +160,81 @@ class MatchingService:
         dimensions = (
             self._dimension(
                 "skills",
-                self._weights.skills,
-                skills_score,
+                effective_weights["skills"],
+                skills_score if applicable["skills"] else 0.0,
                 (*matched_required, *matched_preferred),
                 (*missing_required, *missing_preferred),
-                f"Matched {len(matched_required)}/{len(required)} required and "
-                f"{len(matched_preferred)}/{len(preferred)} preferred skills.",
+                (
+                    f"Matched {len(matched_required)}/{len(required)} required and "
+                    f"{len(matched_preferred)}/{len(preferred)} preferred skills."
+                    if applicable["skills"]
+                    else (
+                        "No required or preferred skills were extracted; this dimension is not "
+                        "scored."
+                    )
+                ),
             ),
             self._dimension(
                 "experience",
-                self._weights.experience,
-                experience_score,
-                (f"{resume.total_years_experience:g} years",),
+                effective_weights["experience"],
+                experience_score if applicable["experience"] else 0.0,
+                ((f"{resume.total_years_experience:g} years",) if applicable["experience"] else ()),
                 (
                     ()
-                    if experience_score >= 100
+                    if experience_score >= 100 or not applicable["experience"]
                     else (f"{job.minimum_years_experience:g} years required",)
                 ),
-                f"Resume evidence indicates {resume.total_years_experience:g} years against "
-                f"a {job.minimum_years_experience:g}-year minimum.",
+                (
+                    f"Resume evidence indicates {resume.total_years_experience:g} years against "
+                    f"a {job.minimum_years_experience:g}-year minimum."
+                    if applicable["experience"]
+                    else "No minimum experience was extracted; this dimension is not scored."
+                ),
             ),
             self._dimension(
                 "keywords",
-                self._weights.keywords,
-                keyword_score,
+                effective_weights["keywords"],
+                keyword_score if applicable["keywords"] else 0.0,
                 matched_keywords,
                 missing_keywords,
-                f"Matched {len(matched_keywords)}/{len(job_keywords)} normalized job keywords.",
+                (
+                    f"Matched {len(matched_keywords)}/{len(job_keywords)} normalized job keywords."
+                    if applicable["keywords"]
+                    else "No job keywords were extracted; this dimension is not scored."
+                ),
             ),
             self._dimension(
                 "education",
-                self._weights.education,
-                education_score,
-                (() if education_score < 100 else (job.education_level.value,)),
-                (() if education_score >= 100 else (job.education_level.value,)),
-                self._education_explanation(resume, job.education_level, education_score),
+                effective_weights["education"],
+                education_score if applicable["education"] else 0.0,
+                (
+                    ()
+                    if education_score < 100 or not applicable["education"]
+                    else (job.education_level.value,)
+                ),
+                (
+                    ()
+                    if education_score >= 100 or not applicable["education"]
+                    else (job.education_level.value,)
+                ),
+                (
+                    self._education_explanation(resume, job.education_level, education_score)
+                    if applicable["education"]
+                    else "No minimum education was extracted; this dimension is not scored."
+                ),
             ),
             self._dimension(
                 "responsibilities",
-                self._weights.responsibilities,
-                responsibility_score,
+                effective_weights["responsibilities"],
+                responsibility_score if applicable["responsibilities"] else 0.0,
                 tuple(sorted(resume_terms & responsibility_terms)[:12]),
                 (),
-                "Token overlap between documented achievements and job responsibilities; "
-                "this is a small supporting signal, not an LLM-assigned score.",
+                (
+                    "Token overlap between documented achievements and job responsibilities; "
+                    "this is a small supporting signal, not an LLM-assigned score."
+                    if applicable["responsibilities"]
+                    else "No responsibilities were extracted; this dimension is not scored."
+                ),
             ),
         )
         overall = round(sum(item.weighted_score for item in dimensions), 1)
@@ -194,13 +247,51 @@ class MatchingService:
             experience_score=experience_score,
             education_score=education_score,
         )
-        strongest = max(dimensions, key=lambda item: item.raw_score)
-        weakest = min(dimensions, key=lambda item: item.raw_score)
-        explanation = (
-            f"The {overall:.1f}% score is the weighted result of five deterministic dimensions. "
-            f"The strongest dimension is {strongest.name} ({strongest.raw_score:.1f}%), while "
-            f"{weakest.name} ({weakest.raw_score:.1f}%) has the largest improvement opportunity."
-        )
+        has_applicable_criteria = any(applicable.values())
+        scored_dimensions = tuple(item for item in dimensions if item.weight > 0)
+        if not has_applicable_criteria:
+            explanation = (
+                "A meaningful match score cannot be calculated because the job description did "
+                "not yield any explicit skills, experience, keywords, education, or responsibility "
+                "criteria."
+            )
+        elif not scored_dimensions:
+            explanation = (
+                "A meaningful match score cannot be calculated because every extracted job "
+                "criterion is disabled by the configured scoring weights."
+            )
+        elif len(scored_dimensions) == 1:
+            dimension = scored_dimensions[0]
+            explanation = (
+                f"The {overall:.1f}% score is based on the only enabled applicable deterministic "
+                f"dimension, {dimension.name} ({dimension.raw_score:.1f}%); its configured base "
+                "weight is renormalized to 100.0%."
+            )
+        else:
+            strongest = max(scored_dimensions, key=lambda item: item.raw_score)
+            opportunity = max(
+                scored_dimensions,
+                key=lambda item: (100.0 - item.raw_score) * item.weight,
+            )
+            weighted_opportunity = (100.0 - opportunity.raw_score) * opportunity.weight
+            if weighted_opportunity > 0:
+                opportunity_text = (
+                    f"The largest weighted improvement opportunity is {opportunity.name} "
+                    f"({opportunity.raw_score:.1f}%), worth up to "
+                    f"{weighted_opportunity:.1f} overall percentage points."
+                )
+            else:
+                opportunity_text = (
+                    "Every enabled applicable dimension reached 100.0% based on the extracted "
+                    "evidence."
+                )
+            explanation = (
+                f"The {overall:.1f}% score is the weighted result of "
+                f"{len(scored_dimensions)} enabled applicable deterministic dimensions; weights "
+                "are renormalized across them. "
+                f"The strongest dimension is {strongest.name} ({strongest.raw_score:.1f}%). "
+                f"{opportunity_text}"
+            )
         return MatchResult(
             overall_score=overall,
             dimensions=dimensions,

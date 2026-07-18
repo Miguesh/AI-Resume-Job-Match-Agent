@@ -18,7 +18,7 @@ def test_default_score_has_exact_explainable_contributions(
     dimensions = {dimension.name: dimension for dimension in result.dimensions}
 
     assert result.overall_score == 60.0
-    assert result.score_version == "1.0.0"
+    assert result.score_version == "2.0.0"
     assert dimensions["skills"].raw_score == 50.0
     assert dimensions["skills"].weighted_score == 22.5
     assert dimensions["skills"].matched == ("Python", "FastAPI")
@@ -37,7 +37,8 @@ def test_default_score_has_exact_explainable_contributions(
     assert result.matched_keywords == ("Python", "leadership")
     assert result.missing_keywords == ("Docker",)
     assert "strongest dimension is responsibilities (100.0%)" in result.explanation
-    assert "skills (50.0%) has the largest improvement opportunity" in result.explanation
+    assert "largest weighted improvement opportunity is skills (50.0%)" in result.explanation
+    assert "22.5 overall percentage points" in result.explanation
 
 
 def test_scoring_is_deterministic_and_does_not_mutate_inputs(
@@ -59,7 +60,7 @@ def test_scoring_is_deterministic_and_does_not_mutate_inputs(
 @pytest.mark.parametrize(
     ("required", "preferred", "resume_skills", "expected"),
     [
-        ((), (), (), 100.0),
+        ((), (), (), 0.0),
         (("Python",), (), (), 0.0),
         (("Python",), (), ("Python",), 100.0),
         ((), ("AWS", "Python"), ("Python",), 50.0),
@@ -131,7 +132,7 @@ def test_terms_ignore_stop_words_and_responsibility_score_handles_no_target() ->
     assert MatchingService._overlap_score({"build"}, {"build", "operate"}) == 50.0
 
 
-def test_empty_job_requirements_produce_full_score_and_fallback_recommendation(
+def test_empty_job_requirements_do_not_produce_an_inflated_score(
     resume_factory: Callable[..., ResumeProfile],
     job_factory: Callable[..., JobProfile],
 ) -> None:
@@ -146,10 +147,94 @@ def test_empty_job_requirements_produce_full_score_and_fallback_recommendation(
 
     result = MatchingService().score(resume_factory(), job)
 
-    assert result.overall_score == 100.0
-    assert [dimension.raw_score for dimension in result.dimensions] == [100.0] * 5
+    assert result.overall_score == 0.0
+    assert [dimension.raw_score for dimension in result.dimensions] == [0.0] * 5
+    assert [dimension.weight for dimension in result.dimensions] == [0.0] * 5
+    assert "cannot be calculated" in result.explanation
     assert len(result.recommendations) == 1
-    assert result.recommendations[0].category == "presentation"
+    assert result.recommendations[0].category == "input_quality"
+
+
+def test_weights_are_renormalized_across_only_applicable_dimensions(
+    resume_factory: Callable[..., ResumeProfile],
+    job_factory: Callable[..., JobProfile],
+) -> None:
+    job = job_factory(
+        preferred_skills=(),
+        responsibilities=(),
+        education_level=EducationLevel.NONE,
+        minimum_years_experience=0,
+        keywords=(),
+    )
+
+    result = MatchingService().score(resume_factory(), job)
+    dimensions = {dimension.name: dimension for dimension in result.dimensions}
+
+    assert result.overall_score == 50.0
+    assert dimensions["skills"].weight == 1.0
+    assert dimensions["skills"].raw_score == 50.0
+    assert all(dimension.weight == 0 for name, dimension in dimensions.items() if name != "skills")
+    assert "only enabled applicable deterministic dimension, skills" in result.explanation
+    assert "renormalized to 100.0%" in result.explanation
+
+
+def test_largest_improvement_opportunity_uses_weighted_score_gap(
+    resume_factory: Callable[..., ResumeProfile],
+    job_factory: Callable[..., JobProfile],
+) -> None:
+    resume = resume_factory(
+        skills=(create_skill("Python"),),
+        total_years_experience=0,
+    )
+    job = job_factory(
+        required_skills=(create_skill("Python"),),
+        preferred_skills=(create_skill("AWS"),),
+        responsibilities=(),
+        education_level=EducationLevel.NONE,
+        minimum_years_experience=5,
+        keywords=(),
+    )
+    weights = ScoringWeights(
+        skills=0.9,
+        experience=0.1,
+        keywords=0,
+        education=0,
+        responsibilities=0,
+    )
+
+    result = MatchingService(weights).score(resume, job)
+
+    assert result.overall_score == 72.0
+    assert "strongest dimension is skills (80.0%)" in result.explanation
+    assert "largest weighted improvement opportunity is skills (80.0%)" in result.explanation
+    assert "18.0 overall percentage points" in result.explanation
+
+
+def test_applicable_criteria_with_zero_configured_weight_report_configuration_gap(
+    resume_factory: Callable[..., ResumeProfile],
+    job_factory: Callable[..., JobProfile],
+) -> None:
+    job = job_factory(
+        required_skills=(),
+        preferred_skills=(),
+        responsibilities=(),
+        education_level=EducationLevel.NONE,
+        minimum_years_experience=5,
+        keywords=(),
+    )
+    weights = ScoringWeights(
+        skills=1,
+        experience=0,
+        keywords=0,
+        education=0,
+        responsibilities=0,
+    )
+
+    result = MatchingService(weights).score(resume_factory(), job)
+
+    assert result.overall_score == 0.0
+    assert "every extracted job criterion is disabled" in result.explanation
+    assert "did not yield any explicit" not in result.explanation
 
 
 def test_scoring_weights_reject_values_that_do_not_sum_to_one() -> None:

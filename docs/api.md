@@ -294,8 +294,8 @@ Representative `201 Created` response:
         "evidence": ["engineers", "mentor"]
       }
     ],
-    "explanation": "The 70.2% score is the weighted result of five deterministic dimensions. The strongest dimension is education (100.0%), while responsibilities (25.0%) has the largest improvement opportunity.",
-    "score_version": "1.0.0"
+    "explanation": "The 70.2% score is the weighted result of 5 enabled applicable deterministic dimensions; weights are renormalized across them. The strongest dimension is education (100.0%). The largest weighted improvement opportunity is skills (70.0%), worth up to 13.5 overall percentage points.",
+    "score_version": "2.0.0"
   },
   "optimized_resume": null,
   "created_at": "2026-07-13T14:02:00Z",
@@ -368,7 +368,7 @@ The `200 OK` response is the same `MatchResponse` schema. `optimized_resume` cha
 }
 ```
 
-The snippet above is the complete nested `optimized_resume` value, not the complete enclosing `MatchResponse`. OpenAI mode may rewrite more content than local mode. In both modes, a fact guard runs before persistence. It preserves name/contact fields, role dates/location, and education metadata; rejects added skills, certifications, roles, and education; and requires non-empty source-present evidence for every recorded change. Changed headline/summary text and non-reordering experience bullet/skill content also require at least one section-matching evidence record. The current guard does not bind each record's before/after text to an exact diff. A `422` means it detected unsupported content; passing the guard is not a semantic guarantee that every evidence-grounded rewrite is true.
+The snippet above is the complete nested `optimized_resume` value, not the complete enclosing `MatchResponse`. OpenAI mode may rewrite more content than local mode. In both modes, a fact guard runs before persistence. It preserves name/contact fields, role/education metadata, and exact structured inventories; blocks additions, omissions, duplicates, and new section-unsupported quantitative values; and requires section-relevant source evidence for every recorded change. Headline, summary, skill-order, and indexed experience records must bind exact before/after values to the returned section. A `422` means it detected unsupported content; passing the guard is not a semantic-entailment guarantee that every rewrite is true.
 
 ### 6. Export results
 
@@ -411,7 +411,7 @@ curl --fail-with-body -X DELETE \
 }
 ```
 
-The service deletes the database resume row and the UUID-addressed original file. Match rows reference resumes with `ON DELETE CASCADE` at the database schema level. Deletion is not a substitute for backup-expiration or storage-volume lifecycle policy.
+The service deletes the database resume row and the UUID-addressed original file. If the database commit fails after file deletion, it attempts to restore the stored bytes before returning the error. Match rows reference resumes with `ON DELETE CASCADE` at the database schema level. This compensation is not a distributed transaction and deletion is not a substitute for backup-expiration or storage-volume lifecycle policy.
 
 ## Resource details
 

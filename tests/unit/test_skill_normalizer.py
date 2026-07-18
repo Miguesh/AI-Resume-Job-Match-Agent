@@ -6,6 +6,7 @@ from resume_matcher.domain.skill_normalizer import (
     create_skill,
     deduplicate_skills,
     display_skill,
+    map_skills_preserving_order,
     normalize_skill,
 )
 
@@ -51,4 +52,14 @@ def test_deduplicate_skills_is_alias_aware_sorted_and_ignores_empty_values() -> 
     assert [(skill.name, skill.normalized_name) for skill in skills] == [
         ("AWS", "aws"),
         ("PostgreSQL", "postgresql"),
+    ]
+
+
+def test_provider_skill_mapping_preserves_order_and_duplicates_for_validation() -> None:
+    skills = map_skills_preserving_order(["Postgres", "Python", "POSTGRESQL"])
+
+    assert [skill.normalized_name for skill in skills] == [
+        "postgresql",
+        "python",
+        "postgresql",
     ]

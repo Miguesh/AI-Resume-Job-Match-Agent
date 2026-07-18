@@ -112,7 +112,7 @@ This explicit composition keeps dependency injection understandable without requ
 
 1. `POST /api/v1/matches/{id}/optimize` loads the match, resume, and job.
 2. The intelligence adapter creates an optimized structured draft.
-3. `ResumeFactGuard` preserves identity/contact data and verified role/education metadata; rejects added skills, certifications, roles, or education; and requires every recorded change to cite non-empty evidence present in the source text. Headline/summary rewrites and non-reordering experience bullet/skill changes must also have at least one section-matching evidence record. This is a section-level presence check, not an exact binding between each record and diff.
+3. `ResumeFactGuard` preserves identity/contact data, exact structured inventories, and verified role/education metadata; blocks additions, omissions, and duplicates; and rejects quantitative claims absent from the relevant source context. Headline, summary, skill-order, and experience-bullet changes must identify the supported section, bind exact before/after content, and cite section-relevant source evidence. This structural binding is not a semantic-entailment guarantee.
 4. A passing draft is persisted with the analysis.
 5. Export selects the optimized draft when present and otherwise uses the original profile.
 6. JSON includes the selected resume, target job, and match evidence. The job profile includes raw job text; the original `ResumeProfile` includes raw resume text when no optimized draft has replaced it. DOCX and PDF render the selected resume without a separate analysis section.
@@ -125,9 +125,9 @@ This explicit composition keeps dependency injection understandable without requ
 | `JobDescription` | `job_descriptions` | Original job text and extracted hiring criteria | Created by API; no delete endpoint in this release. |
 | `MatchAnalysis` | `match_analyses` | Score evidence, recommendations, optional optimized resume | References resume and job; database foreign keys enforce cascade deletion, including explicit SQLite foreign-key enablement. |
 
-Original uploaded bytes are stored outside the database at `STORAGE_PATH/{resume_uuid}.bin`. The adapter forces the upload directory to `0700`, files to `0600`, writes through an atomic temporary replacement, and removes a failed temporary write. Local development defaults to SQLite; Docker Compose supplies PostgreSQL. Alembic owns the deployable schema history.
+Original uploaded bytes are stored outside the database at `STORAGE_PATH/{resume_uuid}.bin`. The adapter forces the upload directory to `0700`, files to `0600`, writes through an atomic temporary replacement, and removes a failed temporary write. Local development defaults to SQLite; Docker Compose supplies PostgreSQL. Alembic owns the deployable schema history. Production configuration rejects `DATABASE_AUTO_CREATE_SCHEMA=true`, so migrations must be applied explicitly before application startup.
 
-Database and file writes cannot participate in one atomic transaction. Upload compensates for a database failure by deleting the newly stored file. Resume deletion removes the database row, then the file, then commits; production operations should monitor for orphaned records/files and verify backup deletion separately.
+Database and file writes cannot participate in one atomic transaction. Upload compensates for a database failure by deleting the newly stored file. Resume deletion snapshots the stored bytes, removes the file, and restores it if the database commit fails. These are compensating actions rather than a distributed transaction: production operations must still monitor failed compensation, reconcile orphaned records/files, and verify backup deletion separately.
 
 ## Scoring boundary
 
@@ -137,7 +137,7 @@ The scoring boundary is deliberately narrow:
 validated ResumeProfile + validated JobProfile
                     |
                     v
-       MatchingService policy 1.0.0
+       MatchingService policy 2.0.0
                     |
                     v
  versioned MatchResult with evidence and recommendations
@@ -153,7 +153,7 @@ AI is behind the `ResumeIntelligence` port. The OpenAI adapter:
 - uses the Responses API structured parsing feature with strict Pydantic contracts;
 - maps timeouts, connection failures, rate limits, and provider errors to application exceptions;
 - never returns an overall or dimension score;
-- subjects optimized output to a deterministic fact guard that preserves identity/contact fields, role dates/location, and education metadata; prevents added skills/certifications; validates source-present change evidence; and rejects headline/summary rewrites or non-reordering experience bullet/skill changes that lack a section-matching change record. The current guard does not bind each record's before/after text to an exact diff.
+- subjects optimized output to a deterministic fact guard that preserves identity/contact fields, structured inventories, role dates/location, education metadata, and per-role skills; validates source-present, section-relevant evidence; binds change records to exact returned content; and blocks new quantitative values absent from section context. This structural binding does not prove semantic entailment.
 
 The direct SDK decision is documented in [ADR 0003](adr/0003-direct-openai-sdk.md). Prompt and optimization versions live in `infrastructure/ai/prompts.py` and should be evaluated whenever changed.
 
@@ -184,7 +184,7 @@ TLS termination, shared rate limiting, firewalling, volume encryption, encrypted
 - **Idempotency:** exact resume bytes are deduplicated globally by SHA-256. Job, match, and optimization POSTs do not accept idempotency keys.
 - **Concurrency:** database work is async; document parsing and export are local CPU/memory work. There is no worker queue or cancellation API.
 - **Rate limiting:** the built-in limiter is per process and not a distributed production control.
-- **Logging:** JSON logs include request ID, method, path, status, and duration. A filter redacts common bearer tokens, OpenAI-style keys, and email addresses from formatted messages. Request bodies are not intentionally logged.
+- **Logging:** JSON logs include request ID, method, path, status, and duration. OpenAI telemetry adds only the operation, provider state, latency, and aggregate token counts; payloads, refusal text, provider error bodies, and response IDs are not logged. A filter redacts common bearer tokens, OpenAI-style keys, and email addresses from formatted messages. Request bodies are not intentionally logged.
 - **API versioning:** routes use `/api/v1`; score behavior has its own `score_version`.
 
 ## Security design and known limits

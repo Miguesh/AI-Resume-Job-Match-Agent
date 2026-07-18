@@ -26,8 +26,12 @@ class JobService:
     async def create(self, text: str) -> JobDescription:
         profile = await self._intelligence.extract_job(text)
         job = JobDescription(profile=profile)
-        await self._repository.add(job)
-        await self._transaction.commit()
+        try:
+            await self._repository.add(job)
+            await self._transaction.commit()
+        except Exception:
+            await self._transaction.rollback()
+            raise
         return job
 
     async def get(self, job_id: UUID) -> JobDescription:

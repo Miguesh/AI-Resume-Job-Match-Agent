@@ -27,6 +27,8 @@ def test_development_defaults_are_safe_and_documentation_is_enabled() -> None:
     assert settings.docs_enabled is True
     assert settings.is_production is False
     assert settings.storage_path == Path("data/uploads")
+    assert settings.openai_max_output_tokens == 16_000
+    assert settings.database_auto_create_schema is True
 
 
 def test_csv_settings_strip_empty_values_and_preserve_order() -> None:
@@ -49,6 +51,7 @@ def test_settings_read_case_insensitive_environment_variables(
     monkeypatch.setenv("APP_RATE_LIMIT_PER_MINUTE", "42")
     monkeypatch.setenv("APP_API_KEYS", "key-one,key-two")
     monkeypatch.setenv("APP_ALLOWED_HOSTS", "api.example.com,admin.example.com")
+    monkeypatch.setenv("OPENAI_MAX_OUTPUT_TOKENS", "8192")
 
     settings = Settings(_env_file=None)
 
@@ -56,6 +59,7 @@ def test_settings_read_case_insensitive_environment_variables(
     assert settings.app_rate_limit_per_minute == 42
     assert settings.app_api_keys == ("key-one", "key-two")
     assert settings.app_allowed_hosts == ("api.example.com", "admin.example.com")
+    assert settings.openai_max_output_tokens == 8_192
 
 
 @pytest.mark.parametrize(
@@ -85,6 +89,14 @@ def test_settings_read_case_insensitive_environment_variables(
             },
             "OPENAI_API_KEY is required",
         ),
+        (
+            {
+                "app_api_keys": ("secret",),
+                "app_allowed_hosts": ("api.example.com",),
+                "database_auto_create_schema": True,
+            },
+            "DATABASE_AUTO_CREATE_SCHEMA must be false",
+        ),
     ],
 )
 def test_production_rejects_insecure_configuration(
@@ -103,12 +115,14 @@ def test_valid_production_configuration_disables_docs_and_redacts_secrets() -> N
         ai_provider="openai",
         openai_api_key="openai-secret-value",
         database_url="postgresql+asyncpg://user:password@example.com/resumes",
+        database_auto_create_schema=False,
     )
 
     assert settings.is_production is True
     assert settings.docs_enabled is False
     assert settings.openai_api_key is not None
     assert settings.openai_api_key.get_secret_value() == "openai-secret-value"
+    assert settings.database_auto_create_schema is False
     assert "openai-secret-value" not in repr(settings)
     assert "password@example.com" not in repr(settings)
 
@@ -122,6 +136,8 @@ def test_valid_production_configuration_disables_docs_and_redacts_secrets() -> N
         ("app_rate_limit_per_minute", 0),
         ("openai_timeout_seconds", 4.9),
         ("openai_max_retries", 9),
+        ("openai_max_output_tokens", 1_023),
+        ("openai_max_output_tokens", 128_001),
     ],
 )
 def test_operational_limits_are_validated(field: str, value: object) -> None:
