@@ -55,7 +55,7 @@ async def test_complete_resume_matching_and_export_workflow(
     assert match_response.status_code == 201, match_response.text
     analysis = match_response.json()
     assert 0 < analysis["result"]["overall_score"] < 100
-    assert analysis["result"]["score_version"] == "1.0.0"
+    assert analysis["result"]["score_version"] == "2.0.0"
     assert "Kubernetes" in analysis["result"]["missing_required_skills"]
     assert len(analysis["result"]["dimensions"]) == 5
     assert round(sum(item["weight"] for item in analysis["result"]["dimensions"]), 6) == 1

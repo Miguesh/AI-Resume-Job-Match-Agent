@@ -210,7 +210,7 @@ class LocalResumeIntelligence:
 
         job_terms = {keyword.casefold() for keyword in job.keywords}
         optimized_experience: list[Experience] = []
-        for item in resume.experiences:
+        for source_index, item in enumerate(resume.experiences):
             bullets = tuple(
                 sorted(
                     item.bullets,
@@ -234,7 +234,7 @@ class LocalResumeIntelligence:
             if bullets != item.bullets:
                 changes.append(
                     OptimizationChange(
-                        section=f"experience:{item.company}",
+                        section=f"experience:{source_index}",
                         before="\n".join(item.bullets),
                         after="\n".join(bullets),
                         reason="Moves the most job-relevant, unchanged achievements first.",

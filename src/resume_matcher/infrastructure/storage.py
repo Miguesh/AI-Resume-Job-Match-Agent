@@ -26,6 +26,16 @@ class FileSystemDocumentStorage:
         finally:
             temporary.unlink(missing_ok=True)
 
+    async def load(self, document_id: UUID) -> bytes | None:
+        return await asyncio.to_thread(self._load_sync, document_id)
+
+    def _load_sync(self, document_id: UUID) -> bytes | None:
+        target = self._safe_path(document_id)
+        try:
+            return target.read_bytes()
+        except FileNotFoundError:
+            return None
+
     async def delete(self, document_id: UUID) -> None:
         await asyncio.to_thread(self._delete_sync, document_id)
 

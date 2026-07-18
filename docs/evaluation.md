@@ -14,10 +14,51 @@ Evaluation is divided into four boundaries so a failure can be attributed correc
 |---|---|---|
 | Document ingestion | Did the service safely recover the available text? | Parser fixtures, malformed files, size/page/archive boundaries, export re-read tests |
 | Structured extraction | Did the selected adapter represent resume/job facts correctly? | Field-level labeled examples, normalized set precision/recall, provider contract tests |
-| Deterministic matching | Did policy `1.0.0` calculate the specified score from those profiles? | Exact-score tests, branch cases, invariants, serialization round trips |
+| Deterministic matching | Did policy `2.0.0` calculate the specified score from those profiles? | Exact-score tests, branch cases, invariants, serialization round trips |
 | Optimization | Did rewriting improve relevance without adding or changing facts? | Fact-guard adversarial tests, source-evidence checks, human review rubric |
 
 API, persistence, authentication, headers, and exports form a fifth cross-cutting reliability boundary covered through integration and end-to-end workflows.
+
+## Reproducible synthetic baseline
+
+The repository includes a versioned offline benchmark at
+[`evaluations/fixtures/synthetic-v1.json`](../evaluations/fixtures/synthetic-v1.json). Its
+five matching cases cover backend, machine-learning, platform, frontend, sparse-job, skill
+normalization, and prompt-injection-as-data scenarios. Six additional cases exercise both
+accepted and rejected fact-guard outcomes. All identities, organizations, contact details,
+and achievements are fictional, and fixture provenance and licensing are documented in the
+[`evaluations/fixtures` README](../evaluations/fixtures/README.md).
+
+Run it without credentials or network access:
+
+```bash
+make evaluate
+```
+
+On Windows or a machine without Make, run the underlying command directly:
+
+```bash
+uv run python -m evaluations.runner --json-output tmp/evaluation-report.json --markdown-output tmp/evaluation-report.md
+```
+
+The command writes deterministic machine-readable and human-readable reports to
+`tmp/evaluation-report.json` and `tmp/evaluation-report.md`. It exits non-zero when any
+golden regression gate fails. The accepted local result is versioned as
+[`evaluations/baselines/local-v1.md`](../evaluations/baselines/local-v1.md). The report
+includes:
+
+- structured validity against the current Pydantic extraction contracts;
+- micro precision, recall, and F1 for resume, required-job, and preferred-job skills;
+- required-versus-preferred classification accuracy;
+- exact agreement and mean absolute error against reviewed score-policy outputs;
+- expected accept/reject accuracy for fact-guard cases; and
+- per-case evidence that name and job-title fields were not changed by prompt-like input.
+
+These metrics establish reproducibility for deliberately explicit synthetic examples and
+protect against code regressions. They are not a statistically meaningful provider
+benchmark and must not be presented as evidence of performance on real applicants. The
+dataset must be versioned whenever fixtures or labels change; a score-policy change requires
+reviewing the golden scores and publishing the new `score_version` beside the report.
 
 ## Existing automated evidence
 
@@ -27,9 +68,9 @@ The current suite is organized as follows:
 - `tests/integration/`: API authentication, trusted hosts, safe error responses, and middleware behavior;
 - `tests/contract/`: generated OpenAPI path, summary, and tag expectations;
 - `tests/e2e/`: upload → job extraction → score → optimization → JSON/DOCX/PDF export → deletion using local AI and SQLite;
-- `tests/external/`: an explicitly enabled OpenAI structured-extraction smoke test.
+- `tests/external/`: explicitly enabled OpenAI structured-extraction and full extraction-to-optimization/fact-guard smoke tests.
 
-CI runs Python 3.12 and 3.13 quality jobs, strict mypy, Ruff, non-external pytest coverage, migration lifecycle checks, dependency auditing, and a Docker image build. External OpenAI tests are deliberately excluded from normal CI because they require a secret, consume budget, and can be nondeterministic.
+CI runs Python 3.12 and 3.13 quality jobs, strict mypy, Ruff, the synthetic evaluation gate, non-external pytest coverage, migration lifecycle checks, dependency auditing, and a containerized PostgreSQL product smoke. The Docker job exercises upload, job extraction, matching, local optimization, all three exports, API restart, and persistence. External OpenAI tests are deliberately excluded from normal CI because they require a secret, consume budget, and can be nondeterministic.
 
 ## Running verification
 
@@ -55,7 +96,7 @@ uv run pytest tests/contract tests/e2e -m "not external"
 uv run pytest tests/unit/test_matching.py -q
 ```
 
-Run the consolidated local quality checks (GitHub CI additionally exercises migrations, dependency audit, and the Docker build):
+Run the consolidated local quality checks (GitHub CI additionally exercises migrations, dependency audit, and the full Docker Compose smoke):
 
 ```bash
 make ci
@@ -79,11 +120,11 @@ The scorer should meet these hard invariants for any valid profiles:
 1. repeated calls with identical profiles return equal results;
 2. every raw dimension and the overall score stays within `0`–`100`;
 3. the five weights sum to exactly `1` within floating-point tolerance;
-4. the persisted `score_version` remains `1.0.0` for the current formulas;
+4. the persisted `score_version` remains `2.0.0` for the current formulas;
 5. adding a supported exact-match skill cannot reduce the skill score, all else equal;
 6. experience at or above the requirement scores `100` and never produces bonus points;
 7. equal or higher education rank cannot reduce the education score;
-8. empty job criteria follow the documented neutral behavior;
+8. omitted criteria are excluded and active weights are renormalized; an entirely empty job yields an insufficient-criteria score of zero;
 9. aliases produce the same result as their canonical skill names;
 10. persistence serialization preserves the result without semantic drift.
 
@@ -93,7 +134,10 @@ Exact expected values—not broad ranges—should be asserted for representative
 
 ### Dataset
 
-Create a versioned, reviewable benchmark under a future `evaluations/fixtures/` directory. Use synthetic or explicitly licensed/de-identified documents. Never commit real contact details or private resumes.
+The included synthetic baseline is the first versioned, reviewable benchmark under
+`evaluations/fixtures/`. Expand it with synthetic or explicitly licensed/de-identified
+documents before making provider-quality claims. Never commit real contact details or
+private resumes.
 
 Each case should contain:
 
@@ -157,19 +201,19 @@ Optimization must be assessed for both relevance and factual integrity.
 
 ### Automated checks
 
-- No normalized skill appears in the output unless it was in the source profile.
-- No new role/company or institution/degree pair appears.
+- The global skill inventory is identical to the source: no additions, removals, or hidden duplicates. Reordering requires a bound change record.
+- Role and education inventories are identical to the source: no additions, removals, or duplicate entries.
 - Identity and contact fields remain unchanged.
-- Certifications remain a subset of the source certifications.
-- Every recorded `OptimizationChange` includes non-empty source evidence found in raw source text.
-- A changed headline or summary has at least one section-matching change record.
-- A changed multiset of experience bullets or experience skills has at least one experience-section change record; pure reordering remains allowed.
-- A future stronger check should bind every change record's before/after text and evidence to its exact diff or role.
+- Certifications remain an exact case-insensitive multiset of the source certifications.
+- Every role preserves dates, location, and its exact skill multiset.
+- Every recorded `OptimizationChange` binds exact `before`/`after` serialization to an actual changed field and includes non-empty source evidence found in raw source text and the relevant section.
+- Headline and summary rewrites, global-skill reorderings, and experience-bullet changes require an exact section record. Experience sections use the stable source index, for example `experience:0`.
+- A generated number, percentage, currency amount, or date must already appear in that section's source context.
 - Every output conforms to `OptimizedResumeContract` limits.
 - DOCX and PDF outputs can be reopened and their text remains searchable.
 - Missing required skills do not appear as newly claimed resume skills.
 
-The fact guard is a defense in depth control, not a semantic proof. Current tests exercise unsupported role metadata, education metadata, titles, contact details, certifications, missing/false evidence, and unrecorded headline, summary, and experience-content changes. Further adversarial evaluation should focus on meaning-changing bullet, summary, headline, and metric rewrites that provide real source evidence while drawing an unsupported conclusion. Gaps found by these tests should become deterministic checks where practical.
+The fact guard is a defense in depth control, not a semantic proof. Current tests exercise inventory additions/removals/duplications, role and education metadata, contact details, per-role skills, section-specific evidence, exact before/after binding, repeated role identities, and unsupported quantitative claims. Further adversarial evaluation should focus on meaning-changing prose that reuses genuine evidence while drawing an unsupported conclusion. Gaps found by these tests should become deterministic checks where practical.
 
 ### Human rubric
 

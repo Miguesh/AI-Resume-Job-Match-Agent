@@ -23,7 +23,9 @@ async def readiness(
     response: Response,
     container: Annotated[AppContainer, Depends(get_container)],
 ) -> HealthResponse:
-    database_ready = await container.database.healthcheck()
+    database_ready = await container.database.healthcheck(
+        require_current_schema=not container.settings.database_auto_create_schema
+    )
     if not database_ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return HealthResponse(

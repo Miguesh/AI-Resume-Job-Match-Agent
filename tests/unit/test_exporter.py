@@ -38,7 +38,7 @@ def test_json_export_contains_versioned_complete_analysis(
     assert payload["resume"]["name"] == "Jane Doe"
     assert payload["target_job"]["title"] == "Senior API Engineer"
     assert payload["match_analysis"]["overall_score"] == 60.0
-    assert payload["match_analysis"]["score_version"] == "1.0.0"
+    assert payload["match_analysis"]["score_version"] == "2.0.0"
     assert payload["optimized"] is False
 
 

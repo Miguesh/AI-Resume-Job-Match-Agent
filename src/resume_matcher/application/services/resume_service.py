@@ -54,9 +54,21 @@ class ResumeService:
             await self._storage.save(document.id, content)
             await self._repository.add(document)
             await self._transaction.commit()
-        except Exception:
-            await self._transaction.rollback()
-            await self._storage.delete(document.id)
+        except Exception as operation_error:
+            recovery_errors: list[Exception] = [operation_error]
+            try:
+                await self._transaction.rollback()
+            except Exception as rollback_error:
+                recovery_errors.append(rollback_error)
+            try:
+                await self._storage.delete(document.id)
+            except Exception as cleanup_error:
+                recovery_errors.append(cleanup_error)
+            if len(recovery_errors) > 1:
+                raise ExceptionGroup(
+                    "Resume upload failed and one or more recovery actions also failed",
+                    recovery_errors,
+                ) from operation_error
             raise
         return document, parsed.warnings
 
@@ -67,8 +79,31 @@ class ResumeService:
         return document
 
     async def delete(self, document_id: UUID) -> None:
-        deleted = await self._repository.delete(document_id)
-        if not deleted:
-            raise EntityNotFoundError("resume", str(document_id))
-        await self._storage.delete(document_id)
-        await self._transaction.commit()
+        stored_content = await self._storage.load(document_id)
+        storage_deleted = False
+        try:
+            deleted = await self._repository.delete(document_id)
+            if not deleted:
+                raise EntityNotFoundError("resume", str(document_id))
+            await self._storage.delete(document_id)
+            storage_deleted = True
+            await self._transaction.commit()
+        except EntityNotFoundError:
+            raise
+        except Exception as operation_error:
+            recovery_errors: list[Exception] = [operation_error]
+            try:
+                await self._transaction.rollback()
+            except Exception as rollback_error:
+                recovery_errors.append(rollback_error)
+            if storage_deleted and stored_content is not None:
+                try:
+                    await self._storage.save(document_id, stored_content)
+                except Exception as recovery_error:
+                    recovery_errors.append(recovery_error)
+            if len(recovery_errors) > 1:
+                raise ExceptionGroup(
+                    "Resume deletion failed and one or more recovery actions also failed",
+                    recovery_errors,
+                ) from operation_error
+            raise

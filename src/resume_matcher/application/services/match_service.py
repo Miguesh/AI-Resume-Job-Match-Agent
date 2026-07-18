@@ -47,8 +47,12 @@ class MatchService:
             raise EntityNotFoundError("job description", str(job_id))
         result = self._matcher.score(resume.profile, job.profile)
         analysis = MatchAnalysis(resume_id=resume_id, job_id=job_id, result=result)
-        await self._matches.add(analysis)
-        await self._transaction.commit()
+        try:
+            await self._matches.add(analysis)
+            await self._transaction.commit()
+        except Exception:
+            await self._transaction.rollback()
+            raise
         return analysis
 
     async def get(self, analysis_id: UUID) -> MatchAnalysis:
@@ -68,8 +72,12 @@ class MatchService:
         optimized = await self._intelligence.optimize_resume(resume.profile, job.profile, analysis)
         self._fact_guard.validate(resume.profile, optimized)
         updated = replace(analysis, optimized_resume=optimized, updated_at=utc_now())
-        await self._matches.update(updated)
-        await self._transaction.commit()
+        try:
+            await self._matches.update(updated)
+            await self._transaction.commit()
+        except Exception:
+            await self._transaction.rollback()
+            raise
         return updated
 
 

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-13
+- Amended: 2026-07-18
 
 ## Context
 
@@ -11,7 +12,7 @@ LLMs are useful for converting unstructured documents into schemas and conservat
 
 ## Decision
 
-Only `domain/matching.py` may calculate the numeric score. The current policy is version `1.0.0`:
+Only `domain/matching.py` may calculate the numeric score. The current policy is version `2.0.0`, with these base weights:
 
 - skills: 45%;
 - experience: 25%;
@@ -19,7 +20,9 @@ Only `domain/matching.py` may calculate the numeric score. The current policy is
 - education: 10%;
 - responsibility-token overlap: 5%.
 
-When required and preferred skill sets are both present, required coverage receives 80% of the skill dimension and preferred coverage 20%. Each response persists raw and weighted dimension scores, matched and missing evidence, a calculation explanation, recommendations, and `score_version`.
+When required and preferred skill sets are both present, required coverage receives 80% of the skill dimension and preferred coverage 20%. A dimension is applicable only when the job contains its criterion; omitted dimensions receive weight zero and the remaining base weights are renormalized. If no criteria are extracted, the policy returns zero with an insufficient-criteria explanation. This replaced version `1.0.0`, where omitted criteria contributed full-credit points and could inflate sparse jobs.
+
+Each response persists raw and weighted dimension scores, matched and missing evidence, a calculation explanation, recommendations, and `score_version`.
 
 AI adapters may extract `ResumeProfile` and `JobProfile` inputs and generate prose, but their contracts do not include score fields. Stored results are snapshots and are not silently recalculated.
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from resume_matcher.domain.entities import (
+    EducationLevel,
     JobProfile,
     RecommendationPriority,
     ResumeProfile,
@@ -79,3 +80,33 @@ def test_recommendations_use_presentation_fallback_when_all_criteria_align(
     assert recommendation.category == "presentation"
     assert recommendation.priority is RecommendationPriority.LOW
     assert "quantifying outcomes already supported" in recommendation.guidance
+
+
+def test_recommendations_request_better_input_when_job_has_no_explicit_criteria(
+    resume_factory: Callable[..., ResumeProfile],
+    job_factory: Callable[..., JobProfile],
+) -> None:
+    job = job_factory(
+        required_skills=(),
+        preferred_skills=(),
+        responsibilities=(),
+        education_level=EducationLevel.NONE,
+        minimum_years_experience=0,
+        keywords=(),
+    )
+
+    recommendations = RecommendationService().build(
+        resume=resume_factory(),
+        job=job,
+        missing_required=(),
+        missing_preferred=(),
+        missing_keywords=(),
+        experience_score=100,
+        education_score=100,
+    )
+
+    assert len(recommendations) == 1
+    recommendation = recommendations[0]
+    assert recommendation.category == "input_quality"
+    assert recommendation.priority is RecommendationPriority.HIGH
+    assert "complete role requirements" in recommendation.guidance

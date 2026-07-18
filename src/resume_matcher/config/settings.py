@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.6-luna"
     openai_timeout_seconds: float = Field(default=45.0, ge=5, le=180)
     openai_max_retries: int = Field(default=3, ge=0, le=8)
+    openai_max_output_tokens: int = Field(default=16_000, ge=1_024, le=128_000)
 
     database_url: SecretStr = SecretStr("sqlite+aiosqlite:///./data/resume_matcher.db")
     database_echo: bool = False
@@ -82,4 +83,9 @@ class Settings(BaseSettings):
                 raise ValueError("Wildcard hosts are not allowed in production")
             if self.ai_provider is AIProvider.OPENAI and self.openai_api_key is None:
                 raise ValueError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
+            if self.database_auto_create_schema:
+                raise ValueError(
+                    "DATABASE_AUTO_CREATE_SCHEMA must be false in production; apply Alembic "
+                    "migrations before startup"
+                )
         return self
