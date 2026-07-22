@@ -49,7 +49,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.20,<1" },
     { name = "reportlab", specifier = ">=4.4,<5" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.51,<3" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0,<1" },
 ]
 
 [package.metadata.requires-dev]
