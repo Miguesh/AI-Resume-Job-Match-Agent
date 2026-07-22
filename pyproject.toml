@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.31.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -39,7 +39,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "httpx>=0.28,<1",
-  "mypy>=1.16,<2",
+  "mypy>=2.3.0,<3",
   "pip-audit>=2.9,<3",
   "pytest>=8.4,<10",
   "pytest-asyncio>=1.0,<2",
