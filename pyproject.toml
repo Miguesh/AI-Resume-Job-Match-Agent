@@ -24,8 +24,8 @@ dependencies = [
   "aiosqlite>=0.21,<1",
   "alembic>=1.16,<2",
   "asyncpg>=0.30,<1",
-  "fastapi>=0.128,<1",
-  "openai>=2.15,<3",
+  "fastapi>=0.140.1,<1",
+  "openai>=2.48.0,<3",
   "pydantic>=2.12,<3",
   "pydantic-settings>=2.10,<3",
   "pymupdf>=1.26,<2",
@@ -46,7 +46,7 @@ dev = [
   "pytest-cov>=6.2,<8",
   "pypdf>=6.0,<7",
   "respx>=0.22,<1",
-  "ruff>=0.12,<1",
+  "ruff>=0.16.0,<1",
 ]
 
 [project.urls]
